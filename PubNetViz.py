@@ -11,6 +11,7 @@ from networkx.algorithms.community import greedy_modularity_communities
 
 
 def search(query,results='99999'):
+    """Runs Entrez search and returns article handes"""
     Entrez.email = email
     handle = Entrez.esearch(db='pubmed', 
                             sort='date', 
@@ -21,6 +22,7 @@ def search(query,results='99999'):
     return results
 
 def fetch_details(id_list):
+    """Pulls article contents by article ID list"""
     ids = unicode(','.join(id_list))
     Entrez.email = email
     handle = Entrez.efetch(db='pubmed',
@@ -31,6 +33,7 @@ def fetch_details(id_list):
 
 
 def pullResults(query,results):
+    """Returns papers json from pubmed query"""
     articleHits = search(query,results)
     articleIDs = articleHits['IdList']
     print query, len(articleIDs)
@@ -41,6 +44,7 @@ def pullResults(query,results):
     return papers
     
 def queryToDf(query,results,show=False,dumpRaw=False):
+    """Creates df of select pubmed data fields from query"""
     papers = pullResults(query,results)
     data = pd.DataFrame(columns=['year','month','day','title',
                                  'abstract','qualifiers','grantAgency',
@@ -96,13 +100,14 @@ def queryToDf(query,results,show=False,dumpRaw=False):
     return data,noLoads
 
 
-#@title
 def getDates(x):
+    """Returns series of datetimes from string date information"""
     x = x[(x.year != 'null') & (x.month != 'null') & (x.day != 'null')]
     return pd.to_datetime(x.year*10000+x.month*100+x.day,format='%Y%m%d')
 
 
 def prepMethodDates(subset,query,limit=120):
+    """Returns subset of df based on recency"""
     for methodName,methodData in subset.iteritems():
         t0 = datetime.now()
         methodData['elapsed'] = (getDates(methodData) - t0).dt.days
@@ -113,6 +118,7 @@ def prepMethodDates(subset,query,limit=120):
 
 
 def getCategories(df,catCol):
+    """Get categorical labels within a given column"""
     try:
         categories = set(df[catCol])
     except:
@@ -123,6 +129,7 @@ def getCategories(df,catCol):
 
 
 def makeSet(i):
+    """Converts series entry to set"""
     if i == {}:
         i = set()
     elif type(i) is not set:
@@ -130,8 +137,8 @@ def makeSet(i):
     return i
 
 
-
 def cleanGrantID(grantIDs):
+    """Removes punctuation and spaces from grantIDs"""
     IDsOut = set()
     for grantID in grantIDs:
         grantID = grantID.replace(' ','-').replace('/','-')
@@ -147,9 +154,10 @@ cleaners = {'qualifiers':lambda x:x,
             'method':lambda x: x}
 
 
-def getFlatMethodDf(query,catCol,limit):
+def getFlatMethodDf(query,catCol,maxEntries:
+    """Makes a flattened df for a given query and category column"""
     year = datetime.now().year
-    subset = {query:queryToDf('"%s" AND %s:%s[dp]' % (query,year-1,year),results=limit)[0]}
+    subset = {query:queryToDf('"%s" AND %s:%s[dp]' % (query,year-1,year),results=maxEntries)[0]}
     subset = prepMethodDates(subset,query)
     flattened = pd.concat(subset.values())
     flattened.loc[:,catCol] = [makeSet(i) for i in flattened[catCol]]
@@ -158,11 +166,12 @@ def getFlatMethodDf(query,catCol,limit):
 
     return flattened, categories
  
-#@title
+
 def getEdgeWeightDf(query,
                     catCol='qualifiers',
                     freqMin = 1,
                     limit=1000):
+    """Creates an edge weight dataframe, a nodeWeight dictionary, and a categories list from a query"""
     
     flattened,categories = getFlatMethodDf(query,
                                            catCol,
@@ -185,6 +194,7 @@ def getEdgeWeightDf(query,
     
     
 def edgeWeightDfToNet(edgeWeights,nodeWeights,categories):
+    """Creates a weighted undirected network from an edgeweight DF"""
     pubGraph = nx.Graph()
     numCats = len(categories)
     for i in range(numCats):
@@ -199,8 +209,9 @@ def edgeWeightDfToNet(edgeWeights,nodeWeights,categories):
             
     return pubGraph  
     
-#@title
+
 def labelCommunityColors(graph,nodeWeights,minSize=2):
+    """Detects communities in weighted, undirected graph and returns a color key for drawn nodes"""
     communities = list(greedy_modularity_communities(graph,weight='weight'))
     membership = {}
     solo = 0
@@ -226,19 +237,18 @@ def labelCommunityColors(graph,nodeWeights,minSize=2):
     
     return nodeColors,len(communities)-solo
 
-def darken(color,by=2):
-    return [i/float(by) for i in color] 
-    
-    
-    
-#@title
+
 def plotCategoryGraph(catGraph,
                       nodeWeights,
                       title,
                       bg=(.5,.5,.5),
                       textScale=.5):
+    """Renders a viz for a category graph"""
+                
+    def darken(color,by=2):
+        return [i/float(by) for i in color] 
+                    
     pos = nx.kamada_kawai_layout(catGraph,weight='weight',scale=30)
-
     
     sizes=nx.get_node_attributes(catGraph,'size')
     maxSize = max(sizes.values())
@@ -297,13 +307,15 @@ def plotCategoryGraph(catGraph,
     else:
       mpld3.display(fig)
       
+                    
 def prepEdgeData(query,
                 catCol='grantAgency',
                 freqMin = 1,
                 limit=10000,
                 showNetwork = True,
                 showCommunities = True):
-    
+    """One in all function generates a network viz from a pubmed query"""
+                    
     edgeWeights,nodeWeights,categories = getEdgeWeightDf(query = query,
                                                         catCol=catCol,
                                                         freqMin=freqMin,
@@ -319,6 +331,5 @@ def prepEdgeData(query,
         print len(subGraph)
         ngTitleStr = "Community Network of " + titleStr
         plotCategoryGraph(subGraph,nodeWeights,ngTitleStr)
-
-        
+                    
     #return edgeWeights,categoryGraph,communities 
